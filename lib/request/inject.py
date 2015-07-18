@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2014 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2015 sqlmap developers (http://sqlmap.org/)
 See the file 'doc/COPYING' for copying permission
 """
 
@@ -38,6 +38,7 @@ from lib.core.enums import CHARSET_TYPE
 from lib.core.enums import DBMS
 from lib.core.enums import EXPECTED
 from lib.core.enums import PAYLOAD
+from lib.core.exception import SqlmapConnectionException
 from lib.core.exception import SqlmapNotVulnerableException
 from lib.core.exception import SqlmapUserQuitException
 from lib.core.settings import MAX_TECHNIQUES_PER_VALUE
@@ -343,6 +344,9 @@ def getValue(expression, blind=True, union=True, error=True, time=True, fromUser
         getCurrentThreadData().disableStdOut = suppressOutput
 
     try:
+        pushValue(conf.db)
+        pushValue(conf.tbl)
+
         if expected == EXPECTED.BOOL:
             forgeCaseExpression = booleanExpression = expression
 
@@ -367,21 +371,35 @@ def getValue(expression, blind=True, union=True, error=True, time=True, fromUser
             if not conf.forceDns:
                 if union and isTechniqueAvailable(PAYLOAD.TECHNIQUE.UNION):
                     kb.technique = PAYLOAD.TECHNIQUE.UNION
-                    value = _goUnion(forgeCaseExpression if expected == EXPECTED.BOOL else query, unpack, dump)
+                    kb.forcePartialUnion = kb.injection.data[PAYLOAD.TECHNIQUE.UNION].vector[8]
+                    fallback = not expected and kb.injection.data[PAYLOAD.TECHNIQUE.UNION].where == PAYLOAD.WHERE.ORIGINAL and not kb.forcePartialUnion
+
+                    try:
+                        value = _goUnion(forgeCaseExpression if expected == EXPECTED.BOOL else query, unpack, dump)
+                    except SqlmapConnectionException:
+                        if not fallback:
+                            raise
+
                     count += 1
                     found = (value is not None) or (value is None and expectingNone) or count >= MAX_TECHNIQUES_PER_VALUE
 
-                    if not found and not expected and kb.injection.data[PAYLOAD.TECHNIQUE.UNION].where == PAYLOAD.WHERE.ORIGINAL:
+                    if not found and fallback:
                         warnMsg = "something went wrong with full UNION "
-                        warnMsg += "technique (most probably because of "
-                        warnMsg += "limitation on retrieved number of entries). "
-                        warnMsg += "Falling back to partial UNION technique"
-                        singleTimeWarnMessage(warnMsg)
+                        warnMsg += "technique (could be because of "
+                        warnMsg += "limitation on retrieved number of entries)"
+                        if " FROM " in query.upper():
+                            warnMsg += ". Falling back to partial UNION technique"
+                            singleTimeWarnMessage(warnMsg)
 
-                        kb.forcePartialUnion = True
-                        value = _goUnion(query, unpack, dump)
-                        found = (value is not None) or (value is None and expectingNone)
-                        kb.forcePartialUnion = False
+                            try:
+                                pushValue(kb.forcePartialUnion)
+                                kb.forcePartialUnion = True
+                                value = _goUnion(query, unpack, dump)
+                                found = (value is not None) or (value is None and expectingNone)
+                            finally:
+                                kb.forcePartialUnion = popValue()
+                        else:
+                            singleTimeWarnMessage(warnMsg)
 
                 if error and any(isTechniqueAvailable(_) for _ in (PAYLOAD.TECHNIQUE.ERROR, PAYLOAD.TECHNIQUE.QUERY)) and not found:
                     kb.technique = PAYLOAD.TECHNIQUE.ERROR if isTechniqueAvailable(PAYLOAD.TECHNIQUE.ERROR) else PAYLOAD.TECHNIQUE.QUERY
@@ -426,12 +444,15 @@ def getValue(expression, blind=True, union=True, error=True, time=True, fromUser
     finally:
         kb.resumeValues = True
 
+        conf.tbl = popValue()
+        conf.db = popValue()
+
         if suppressOutput is not None:
             getCurrentThreadData().disableStdOut = popValue()
 
     kb.safeCharEncode = False
 
-    if not kb.testMode and value is None and Backend.getDbms() and conf.dbmsHandler and not conf.noCast and not conf.hexConvert:
+    if not any((kb.testMode, conf.dummy, conf.offline)) and value is None and Backend.getDbms() and conf.dbmsHandler and not conf.noCast and not conf.hexConvert:
         warnMsg = "in case of continuous data retrieval problems you are advised to try "
         warnMsg += "a switch '--no-cast' "
         warnMsg += "or switch '--hex'" if Backend.getIdentifiedDbms() not in (DBMS.ACCESS, DBMS.FIREBIRD) else ""
@@ -457,7 +478,7 @@ def goStacked(expression, silent=False):
     query = agent.prefixQuery(";%s" % expression)
     query = agent.suffixQuery(query)
     payload = agent.payload(newValue=query)
-    Request.queryPage(payload, content=False, silent=silent, noteResponseTime=False, timeBasedCompare=True)
+    Request.queryPage(payload, content=False, silent=silent, noteResponseTime=False, timeBasedCompare="SELECT" in (payload or "").upper())
 
 def checkBooleanExpression(expression, expectingNone=True):
     return getValue(expression, expected=EXPECTED.BOOL, charsetType=CHARSET_TYPE.BINARY, suppressOutput=True, expectingNone=expectingNone)

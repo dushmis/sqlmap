@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2014 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2015 sqlmap developers (http://sqlmap.org/)
 See the file 'doc/COPYING' for copying permission
 """
 
@@ -59,6 +59,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
     """
 
     abortedFlag = False
+    showEta = False
     partialValue = u""
     finalValue = None
     retrievedLength = 0
@@ -225,7 +226,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
             if charTbl is None:
                 charTbl = type(asciiTbl)(asciiTbl)
 
-            originalTbl = type(asciiTbl)(charTbl)
+            originalTbl = type(charTbl)(charTbl)
 
             if continuousOrder and shiftTable is None:
                 # Used for gradual expanding into unicode charspace
@@ -313,10 +314,10 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                                         errMsg = "invalid character detected. retrying.."
                                         logger.error(errMsg)
 
-                                        conf.timeSec += 1
-
-                                        warnMsg = "increasing time delay to %d second%s " % (conf.timeSec, 's' if conf.timeSec > 1 else '')
-                                        logger.warn(warnMsg)
+                                        if kb.adjustTimeDelay is not ADJUST_TIME_DELAY.DISABLE:
+                                            conf.timeSec += 1
+                                            warnMsg = "increasing time delay to %d second%s " % (conf.timeSec, 's' if conf.timeSec > 1 else '')
+                                            logger.warn(warnMsg)
 
                                         if kb.adjustTimeDelay is ADJUST_TIME_DELAY.YES:
                                             dbgMsg = "turning off time auto-adjustment mechanism"
@@ -344,10 +345,13 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                         if minValue == maxChar or maxValue == minChar:
                             return None
 
-                        # If we are working with non-continuous elements, set
-                        # both minValue and character afterwards are possible
-                        # candidates
-                        for retVal in (originalTbl[originalTbl.index(minValue)], originalTbl[originalTbl.index(minValue) + 1]):
+                        for index in xrange(len(originalTbl)):
+                            if originalTbl[index] == minValue:
+                                break
+
+                        # If we are working with non-continuous elements, both minValue and character after
+                        # are possible candidates
+                        for retVal in (originalTbl[index], originalTbl[index + 1]):
                             forgedPayload = safeStringFormat(payload.replace(INFERENCE_GREATER_CHAR, INFERENCE_EQUALS_CHAR), (expressionUnescaped, idx, retVal))
                             result = Request.queryPage(forgedPayload, timeBasedCompare=timeBasedCompare, raise404=False)
                             incrementCounter(kb.technique)

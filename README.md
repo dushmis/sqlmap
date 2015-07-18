@@ -49,11 +49,14 @@ Links
 * Mailing list RSS feed: http://rss.gmane.org/messages/complete/gmane.comp.security.sqlmap
 * Mailing list archive: http://news.gmane.org/gmane.comp.security.sqlmap
 * Twitter: [@sqlmap](https://twitter.com/sqlmap)
-* Demos: [#1](http://www.youtube.com/user/inquisb/videos) and [#2](http://www.youtube.com/user/stamparm/videos)
+* Demos: [http://www.youtube.com/user/inquisb/videos](http://www.youtube.com/user/inquisb/videos)
 * Screenshots: https://github.com/sqlmapproject/sqlmap/wiki/Screenshots
 
 Translations
 ----
 
-* [Portuguese](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-pt-BR.md)
+* [Chinese](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-zh-CN.md)
+* [Croatian](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-hr-HR.md)
+* [Greek](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-gr-GR.md)
 * [Indonesian](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-id-ID.md)
+* [Portuguese](https://github.com/sqlmapproject/sqlmap/blob/master/doc/translations/README-pt-BR.md)
